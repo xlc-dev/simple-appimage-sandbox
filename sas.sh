@@ -76,7 +76,6 @@ DEPENDENCIES="
 	readlink
 	squashfuse
 	tail
-	umount
 "
 
 # Name of variables and files to be checked
@@ -110,21 +109,45 @@ if [ -x /usr/libexec/xdg-desktop-portal ] \
 	export GTK_USE_PORTAL="${GTK_USE_PORTAL:-1}"
 fi
 
+_unmount() {
+	if command -v fusermount3 1>/dev/null; then
+		fusermount3 -u -- "$1"
+	elif command -v fusermount 1>/dev/null; then
+		fusermount -u -- "$1"
+	elif command -v umount 1>/dev/null; then
+		umount "$1"
+	else
+		>&2 printf '%s\n' "No FUSE unmount helper found"
+		return 127
+	fi
+}
+
 _cleanup() {
-	set +u
+	status="$1"
+	trap - INT TERM EXIT
+	set +eu
+	cleanup_status=0
 	if [ "$IS_TRUSTED_ONCE" = 1 ]; then
 		chmod -x "$TARGET" || true
 	fi
 	if [ "$SAS_PRELOAD" != 1 ] && [ -n "$MOUNT_POINT" ]; then
-		umount "$MOUNT_POINT"
-		rm -rf "$MOUNT_POINT"
+		_unmount "$MOUNT_POINT" || cleanup_status=$?
+		if [ "$cleanup_status" = 0 ]; then
+			rm -rf "$MOUNT_POINT" || cleanup_status=$?
+		fi
 	fi
 	if [ -n "$APP_TMPDIR" ]; then
-		rm -rf "$APP_TMPDIR"
+		rm -rf "$APP_TMPDIR" || cleanup_status=$?
 	fi
+	if [ "$status" = 0 ] && [ "$cleanup_status" != 0 ]; then
+		status="$cleanup_status"
+	fi
+	exit "$status"
 }
 
-trap _cleanup INT TERM EXIT
+trap '_cleanup 130' INT
+trap '_cleanup 143' TERM
+trap '_cleanup $?' EXIT
 
 _help() {
 	printf '\n%s\n\n' "   USAGE: $0 [OPTIONS] /path/to/app"
