@@ -120,7 +120,7 @@ _cleanup() {
 		elif command -v fusermount 1>/dev/null; then
 			fusermount -u -- "$MOUNT_POINT"
 		elif command -v umount 1>/dev/null; then
-			umount "$1"
+			umount "$MOUNT_POINT"
 		else
 			>&2 printf '%s\n' "No FUSE unmount helper found!"
 		fi
