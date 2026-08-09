@@ -109,45 +109,29 @@ if [ -x /usr/libexec/xdg-desktop-portal ] \
 	export GTK_USE_PORTAL="${GTK_USE_PORTAL:-1}"
 fi
 
-_unmount() {
-	if command -v fusermount3 1>/dev/null; then
-		fusermount3 -u -- "$1"
-	elif command -v fusermount 1>/dev/null; then
-		fusermount -u -- "$1"
-	elif command -v umount 1>/dev/null; then
-		umount "$1"
-	else
-		>&2 printf '%s\n' "No FUSE unmount helper found"
-		return 127
-	fi
-}
-
 _cleanup() {
-	status="$1"
-	trap - INT TERM EXIT
 	set +eu
-	cleanup_status=0
 	if [ "$IS_TRUSTED_ONCE" = 1 ]; then
-		chmod -x "$TARGET" || true
+		chmod -x "$TARGET"
 	fi
 	if [ "$SAS_PRELOAD" != 1 ] && [ -n "$MOUNT_POINT" ]; then
-		_unmount "$MOUNT_POINT" || cleanup_status=$?
-		if [ "$cleanup_status" = 0 ]; then
-			rm -rf "$MOUNT_POINT" || cleanup_status=$?
+		if command -v fusermount3 1>/dev/null; then
+			fusermount3 -u -- "$MOUNT_POINT"
+		elif command -v fusermount 1>/dev/null; then
+			fusermount -u -- "$MOUNT_POINT"
+		elif command -v umount 1>/dev/null; then
+			umount "$1"
+		else
+			>&2 printf '%s\n' "No FUSE unmount helper found!"
 		fi
+		rm -rf "$MOUNT_POINT"
 	fi
 	if [ -n "$APP_TMPDIR" ]; then
-		rm -rf "$APP_TMPDIR" || cleanup_status=$?
+		rm -rf "$APP_TMPDIR"
 	fi
-	if [ "$status" = 0 ] && [ "$cleanup_status" != 0 ]; then
-		status="$cleanup_status"
-	fi
-	exit "$status"
 }
 
-trap '_cleanup 130' INT
-trap '_cleanup 143' TERM
-trap '_cleanup $?' EXIT
+trap _cleanup INT TERM EXIT
 
 _help() {
 	printf '\n%s\n\n' "   USAGE: $0 [OPTIONS] /path/to/app"
