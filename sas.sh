@@ -76,7 +76,6 @@ DEPENDENCIES="
 	readlink
 	squashfuse
 	tail
-	umount
 "
 
 # Name of variables and files to be checked
@@ -111,12 +110,20 @@ if [ -x /usr/libexec/xdg-desktop-portal ] \
 fi
 
 _cleanup() {
-	set +u
+	set +eu
 	if [ "$IS_TRUSTED_ONCE" = 1 ]; then
-		chmod -x "$TARGET" || true
+		chmod -x "$TARGET"
 	fi
 	if [ "$SAS_PRELOAD" != 1 ] && [ -n "$MOUNT_POINT" ]; then
-		umount "$MOUNT_POINT"
+		if command -v fusermount3 1>/dev/null; then
+			fusermount3 -u -- "$MOUNT_POINT"
+		elif command -v fusermount 1>/dev/null; then
+			fusermount -u -- "$MOUNT_POINT"
+		elif command -v umount 1>/dev/null; then
+			umount "$MOUNT_POINT"
+		else
+			>&2 printf '%s\n' "No FUSE unmount helper found!"
+		fi
 		rm -rf "$MOUNT_POINT"
 	fi
 	if [ -n "$APP_TMPDIR" ]; then
