@@ -35,6 +35,7 @@ ALLOW_TEMPLATESDIR=0
 ALLOW_VIDEOSDIR=0
 
 BWRAPCMD="bwrap"
+SECCOMP_FILTER=""
 
 SHARE_APP_CONFIG=1
 SHARE_APP_THEME=1
@@ -724,6 +725,15 @@ while :; do
 			ALLOW_FUSE=1
 			shift
 			;;
+		--seccomp)
+			case "$2" in
+				''|-*) _error "No seccomp filter given to $1";;
+			esac
+			[ -r "$2" ] || _error "Cannot read seccomp filter '$2'"
+			SECCOMP_FILTER="$(_readlink -f "$2")"
+			shift
+			shift
+			;;
 		--allow-nested-caps)
 			if command -v bwrap.patched 1>/dev/null; then
 				BWRAPCMD="bwrap.patched"
@@ -949,4 +959,8 @@ if [ -n "$SAS_XDG_OPEN_DAEMON" ]; then
 fi
 
 # Do the thing!
-"$BWRAPCMD" "$@"
+if [ -n "$SECCOMP_FILTER" ]; then
+	"$BWRAPCMD" --seccomp 3 "$@" 3<"$SECCOMP_FILTER"
+else
+	"$BWRAPCMD" "$@"
+fi

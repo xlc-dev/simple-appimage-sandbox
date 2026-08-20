@@ -34,6 +34,8 @@ Options:
 
 * `--allow-nested-caps` Using this option will switch the `bwrap` in the AppImage builds of `sas` to a [patched](https://github.com/VHSgunzo/bubblewrap-static/blob/main/bwrap.patch) bubblewrap that allows nested bwrap sessions.
 
+* `--seccomp FILE` Apply a compiled seccomp BPF filter to the sandbox. The file must use the format produced by `seccomp_export_bpf`.
+
 * `--no-config` Don't use existing configuration files, by default we try to give access to a directory matching the name of the given application in the following locations:  
 
 ```
