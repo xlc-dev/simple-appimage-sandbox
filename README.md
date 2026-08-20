@@ -98,6 +98,10 @@ wayland
 * `--no-xdgopen` Do not use the xdg-open of the host, by default sas makes a daemon that lets apps execute the host xdg-open outside the sandbox.
   **Using this option does not mean that `xdg-open` is fully disabled, apps will still execute `xdg-open` inside the sandbox, which may fail to work.**
 
+* `--filter-dbus` Expose only desktop portals on the session D-Bus through `xdg-dbus-proxy` instead of exposing the host bus directly.
+
+* `--dbus-own NAME`, `--dbus-talk NAME` Allow the application to own or talk to an additional D-Bus name. These options enable D-Bus filtering and may be repeated.
+
 * `--level <Level>` Set the sandbox level, only level 1 is supported and used by default, this flag is for compatiblity with aisap.    
 
 ----------------------------------------------------------------------
@@ -120,6 +124,8 @@ squashfuse
 tail
 umount
 ```
+
+`xdg-dbus-proxy` is also required when D-Bus filtering is enabled.
 
 Credits: 
 

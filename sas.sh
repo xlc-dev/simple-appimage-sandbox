@@ -41,6 +41,8 @@ SHARE_APP_THEME=1
 SHARE_APP_NETWORK=1
 SHARE_APP_AUDIO=1
 SHARE_APP_DBUS=1
+FILTER_APP_DBUS=0
+DBUS_RULES=""
 SHARE_APP_XDISPLAY=1
 SHARE_APP_WDISPLAY=1
 SHARE_APP_PIPEWIRE=1
@@ -54,6 +56,8 @@ SAS_PRELOAD="${SAS_PRELOAD:-0}"
 SAS_CURRENTDIR="$(cd "${0%/*}" && echo "$PWD")"
 SAS_XDG_OPEN_DAEMON=""
 SAS_XDG_OPEN_DAEMON_PID=""
+SAS_DBUS_PROXY=""
+SAS_DBUS_PROXY_PID=""
 
 IS_APPIMAGE=0
 IS_TRUSTED_ONCE=0
@@ -128,6 +132,14 @@ _cleanup() {
 	fi
 	if [ -n "$APP_TMPDIR" ]; then
 		rm -rf "$APP_TMPDIR"
+	fi
+	if [ -n "$SAS_DBUS_PROXY_PID" ]; then
+		exec 3<&-
+		kill "$SAS_DBUS_PROXY_PID" 2>/dev/null
+		wait "$SAS_DBUS_PROXY_PID" 2>/dev/null
+	fi
+	if [ -n "$SAS_DBUS_PROXY" ]; then
+		rm -rf "${SAS_DBUS_PROXY%/*}"
 	fi
 }
 
@@ -452,6 +464,32 @@ _make_mountpoint() {
 	mountcheck=$!
 }
 
+_start_dbus_proxy() {
+	ready_pipe="${SAS_DBUS_PROXY%/*}/ready"
+	mkdir -p "${SAS_DBUS_PROXY%/*}"
+	mkfifo "$ready_pipe"
+	eval set -- "$DBUS_RULES"
+
+	xdg-dbus-proxy \
+	  --fd=3 \
+	  "${DBUS_SESSION_BUS_ADDRESS:-unix:path=$RUNDIR/bus}" \
+	  "$SAS_DBUS_PROXY" \
+	  --filter \
+	  '--talk=org.freedesktop.portal.*' \
+	  "$@" \
+	  3>"$ready_pipe" &
+	SAS_DBUS_PROXY_PID=$!
+
+	exec 3<"$ready_pipe"
+	dd of=/dev/null bs=1 count=1 <&3 2>/dev/null
+	rm "$ready_pipe"
+
+	if ! kill -0 "$SAS_DBUS_PROXY_PID" 2>/dev/null \
+	  || [ ! -S "$SAS_DBUS_PROXY" ]; then
+		_error "D-Bus proxy failed to start"
+	fi
+}
+
 _make_bwrap_array() {
 	set -u
 	set -- \
@@ -533,7 +571,7 @@ _make_bwrap_array() {
 	if [ "$SHARE_APP_DBUS" = 1 ]; then
 		set -- "$@" \
 		  --ro-bind-try /var/lib/dbus  /var/lib/dbus  \
-		  --ro-bind-try "$RUNDIR"/bus  /run/user/"$ID"/bus
+		  --ro-bind-try "$DBUS_SOCKET" /run/user/"$ID"/bus
 	fi
 	if [ "$SHARE_APP_AUDIO" = 1 ]; then
 		set -- "$@" \
@@ -651,6 +689,7 @@ CONFIGDIR="${XDG_CONFIG_HOME:-$HOME/.config}"
 CACHEDIR="${XDG_CACHE_HOME:-$HOME/.cache}"
 STATEDIR="${XDG_STATE_HOME:-$HOME/.local/state}"
 RUNDIR="${XDG_RUNTIME_DIR:-/run/user/$ID}"
+DBUS_SOCKET="$RUNDIR/bus"
 
 # check xdg user dirs
 _check_userdirs || true
@@ -718,6 +757,20 @@ while :; do
 			;;
 		--no-xdgopen)
 			ALLOW_XDG_OPEN=0
+			shift
+			;;
+		--filter-dbus)
+			FILTER_APP_DBUS=1
+			shift
+			;;
+		--dbus-own|--dbus-talk)
+			case "$2" in
+				''|-*) _error "No D-Bus name given to $1";;
+			esac
+			FILTER_APP_DBUS=1
+			dbus_rule="--${1#--dbus-}=$2"
+			DBUS_RULES="$DBUS_RULES $(_save_array "$dbus_rule")"
+			shift
 			shift
 			;;
 		--allow-fuse)
@@ -913,6 +966,11 @@ if _is_appimage "$TARGET"; then
 	_make_mountpoint "$TARGET"
 fi
 
+if [ "$FILTER_APP_DBUS" = 1 ]; then
+	SAS_DBUS_PROXY="$TMPDIR/.sas-dbus-$USER/$APPNAME-$HASH/bus"
+	DBUS_SOCKET="$SAS_DBUS_PROXY"
+fi
+
 # make bwrap array
 _make_bwrap_array
 
@@ -920,6 +978,11 @@ if ! wait $xdgcheck; then
 	_error "Something is fishy here, bailing out..."
 elif ! wait $mountcheck; then
 	_error "Something went wrong trying to mount the filesystem..."
+fi
+
+if [ "$SHARE_APP_DBUS" = 1 ] && [ "$FILTER_APP_DBUS" = 1 ]; then
+	_dep_check dd xdg-dbus-proxy
+	_start_dbus_proxy
 fi
 
 if [ "$IS_APPIMAGE" = 1 ]; then
